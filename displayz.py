@@ -1,4 +1,3 @@
-import time
 import digitalio
 import busio
 import board
@@ -41,25 +40,3 @@ class Displayz:
         self.display.image(image)
         self.display.display()
 
-
-    def formatDict(self, data: dict) -> str:
-        lines = []  # Store formatted lines
-
-        # Ensure "status" and "timestamp" appear first on the same line
-        status = data.get("status", "DISCONNECTED")  # Default to "UNKNOWN" if missing
-        timestamp = data.get("timestamp", "???")  # Default to "N/A" if missing
-        lines.append(f"status: {status}, {timestamp}")
-
-        # Process other key-value pairs, adding a tab before each
-        for key, value in data.items():
-            # Handle nested dictionary with "value" and "unit"
-            if "status" not in key and "timestamp" not in key:
-                if isinstance(value, dict) and "data" in value and "unit": 
-                    formatted_value = f"{value['data']} [{value['unit']}]"
-                else:
-                    formatted_value = str(value)  # Convert other values to string
-
-                lines.append(f"    {key}: {formatted_value}")
-
-        # Join all lines into a single string with newlines
-        return "\n".join(lines)

@@ -7,10 +7,15 @@
 from ble_json_service import SensorService
 from adafruit_ble import BLERadio
 from adafruit_ble.advertising.standard import ProvideServicesAdvertisement
-
+import time
+from recordz import LiveRecord
 
 ble = BLERadio()
 connection = None
+
+LOG_CADENCE = 1 # [s]
+RECORD_LIFESPAN = 10 # [s]
+live_record = None
 
 while True:
     if not connection:
@@ -25,4 +30,13 @@ while True:
     if connection and connection.connected:
         service = connection[SensorService]
         while connection.connected:
-            print("Sensors: ", service.sensors)
+            if live_record is None:
+                live_record = LiveRecord(RECORD_LIFESPAN) 
+            
+            if live_record.isLive:
+                live_record.processMessage(service.sensors)
+                print(live_record.latestDataFrameToText())
+            else:
+                live_record = LiveRecord(RECORD_LIFESPAN)
+
+            time.sleep(LOG_CADENCE)

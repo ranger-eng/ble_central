@@ -122,12 +122,3 @@ class LiveRecord(Record):
             formatted_text += f"   {sensor}: {value} {unit}\n"
 
         return formatted_text.strip()  # Remove trailing newline 
-
-
-test_message1 = {"sensor_data": {"uva": 1.2, "uvb": 3.3}, "sensor_units": {"uva": "%", "uvb": "%"}}
-test_message2 = {"sensor_data": {"uva": 5.7, "uvb": 8.0}, "sensor_units": {"uva": "%", "uvb": "%"}}
-
-testLR = LiveRecord(2)
-testLR.processMessage(test_message1)
-testLR.processMessage(test_message2)
-time.sleep(5)
