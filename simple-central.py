@@ -9,6 +9,7 @@ from adafruit_ble import BLERadio
 from adafruit_ble.advertising.standard import ProvideServicesAdvertisement
 import time
 from recordz import LiveRecord
+from displayz import Displayz
 
 ble = BLERadio()
 connection = None
@@ -16,6 +17,8 @@ connection = None
 LOG_CADENCE = 1 # [s]
 RECORD_LIFESPAN = 10 # [s]
 live_record = None
+
+rpi_display = Displayz()
 
 while True:
     if not connection:
@@ -27,15 +30,32 @@ while True:
                 break
         ble.stop_scan()
 
+    if connection and not connection.connected:
+        if live_record is not None:
+            live_record.saveJsonToFile()
+            live_record.isLive = False
+        print("Scanning for BLE device advertising our sensor service...")
+        rpi_display.dispRawText("Connected: False")
+        for adv in ble.start_scan(ProvideServicesAdvertisement):
+            if SensorService in adv.services:
+                connection = ble.connect(adv)
+                print("Connected")
+                break
+        ble.stop_scan()
+
     if connection and connection.connected:
         service = connection[SensorService]
-        while connection.connected:
+        while connection and connection.connected:
+
+            while connection.connected and service.sensors is None:
+                pass
+
             if live_record is None:
                 live_record = LiveRecord(RECORD_LIFESPAN) 
             
             if live_record.isLive:
                 live_record.processMessage(service.sensors)
-                print(live_record.latestDataFrameToText())
+                rpi_display.dispRawText("Connected: " + str(connection.connected) + "\n" + live_record.latestDataFrameToText())
             else:
                 live_record = LiveRecord(RECORD_LIFESPAN)
 
