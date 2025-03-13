@@ -14,8 +14,8 @@ from displayz import Displayz
 ble = BLERadio()
 connection = None
 
-LOG_CADENCE = 10 # [s]
-RECORD_LIFESPAN = 360 # [s]
+LOG_CADENCE = 5 # [s]
+RECORD_LIFESPAN = 30 # [s]
 live_record = None
 
 rpi_display = Displayz()
@@ -54,8 +54,11 @@ while True:
                 live_record = LiveRecord(RECORD_LIFESPAN) 
             
             if live_record.isLive:
+                print("Ranger Lab Reachable: " + str(live_record.isRangerLabReachable("192.168.0.100")))
                 live_record.processMessage(service.sensors)
-                rpi_display.dispRawText("Connected: " + str(connection.connected) + "\n" + live_record.latestDataFrameToText())
+                text_to_disp = "Connected: " + str(connection.connected) + "\n" + live_record.latestDataFrameToText()
+                print(text_to_disp)
+                rpi_display.dispRawText(text_to_disp)
             else:
                 live_record = LiveRecord(RECORD_LIFESPAN)
 

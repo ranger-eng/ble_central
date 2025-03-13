@@ -1,8 +1,14 @@
+import paramiko
+import subprocess
 import time
 import threading
 import pandas as pd
 import json
 import os
+
+REMOTE_HOST="192.168.0.100"
+REMOTE_UN="ranger"
+REMOTE_DIR="/mnt/nosferatu/ranger-storage/records/garden"
 
 class Record:
  
@@ -12,6 +18,9 @@ class Record:
 
     def __init__(self):
         self.dataFrame = None
+        self.scriptDir = os.path.dirname(os.path.abspath(__file__))
+        self.outRecordsDir = os.path.join(self.scriptDir, "outRecords")
+        self.inRecordsDir = os.path.join(self.scriptDir, "inRecords")
 
     def addMessageToDataFrame(self, dataMessage: dict, unitsMessage: dict):
 
@@ -44,6 +53,55 @@ class Record:
     def toTimeStr(self, timeStmp):
         return time.strftime("%H:%M:%S", time.localtime(timeStmp))
 
+    def uploadOutRecords(self, remoteDir=REMOTE_DIR, un=REMOTE_UN, host=REMOTE_HOST):
+        # Ensure the local directory exists
+        if not os.path.isdir(self.outRecordsDir):
+            print("Local directory, ", self.outRecordsDir, " does not exist.")
+            return False
+
+        # Get all files in the directory (ignoring subdirectories)
+        files = [f for f in os.listdir(self.outRecordsDir) if os.path.isfile(os.path.join(self.outRecordsDir, f))]
+        
+        if not files:
+            print("No files to upload in ./outRecords/")
+            return False
+
+        # Construct SCP command to copy files directly into remote_path
+        scp_command = ["scp"] + [os.path.join(self.outRecordsDir, f) for f in files] + [f"{un}@{host}:{remoteDir}"]
+
+        try:
+            result = subprocess.run(scp_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0:
+                print("Files successfully uploaded to RangerLab.")
+                # Delete local files after successful upload
+                for f in files:
+                    os.remove(os.path.join(self.outRecordsDir, f))
+                print("Deleted local files after upload.")
+                return True
+            else:
+                print(f"SCP upload failed: {result.stderr}")
+                return False
+        except Exception as e:
+            print(f"Error: {e}")
+            return False
+
+    def isRangerLabReachable(self, host="192.168.0.100", username="ranger", port=22, timeout=5):
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # Auto-accept unknown keys
+
+        try:
+            ssh.connect(
+                hostname=host,
+                port=port,
+                username=username,
+                timeout=timeout,
+            )
+            ssh.close()
+            return True  # Connection successful
+        except Exception as e:
+            print(f"SSH Connection Failed: {e}")
+            return False  # Connection failed
+
 
 class LiveRecord(Record):
     
@@ -59,6 +117,8 @@ class LiveRecord(Record):
     def _self_destruct(self):
         self.isLive = False
         self.saveJsonToFile()
+        if self.isRangerLabReachable():
+            self.uploadOutRecords()
 
     def saveJsonToFile(self):
         if self.dataFrame is None or self.dataFrame.empty:
@@ -75,12 +135,10 @@ class LiveRecord(Record):
         formatted_time = time.strftime("%Y%m%d%H%M%S", time.localtime(first_timestamp))
 
         # Create output directory if it doesn't exist
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        output_dir = os.path.join(script_dir, "outRecords")
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(self.outRecordsDir, exist_ok=True)
 
         # Define file path
-        file_path = os.path.join(output_dir, f"record.{formatted_time}.json")
+        file_path = os.path.join(self.outRecordsDir, f"record.{formatted_time}.json")
 
         # Get JSON data
         json_data = self.dataFrameToJson()
@@ -122,3 +180,118 @@ class LiveRecord(Record):
             formatted_text += f"   {sensor}: {value} {unit}\n"
 
         return formatted_text.strip()  # Remove trailing newline 
+
+class ArchiveRecord(Record):
+    def __init__(self, start, end):
+        super().__init__()
+        self.start = start
+        self.end = end
+        self.fetchArchive()
+        self.archiveFilesToDataFrame()
+
+    def matchRemoteRecords(self, un=REMOTE_UN, host=REMOTE_HOST):
+        # SSH command to filter files by timestamp range using grep
+        ssh_command = (
+            f'ssh {un}@{host} "ls {REMOTE_DIR}/record.*.json | '
+            f'grep -E \'record\\.([0-9]{{14}})\\.json\' | '
+            f'awk -F. \'\\$2 >= {self.start} && \\$2 <= {self.end}\' "'
+        )
+
+        try:
+            # Run SSH command
+            result = subprocess.run(ssh_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+            if result.returncode != 0:
+                print(f"Failed to list remote files: {result.stderr}")
+                return []
+
+            # Process output and return matching file paths
+            remote_files = result.stdout.strip().split("\n")
+            return [f"{file}" for file in remote_files if file]
+
+        except Exception as e:
+            print(f"Error: {e}")
+            return []
+
+    def fetchArchive(self, un=REMOTE_UN, host=REMOTE_HOST):
+
+        # Get the list of matching files
+        matching_files = self.matchRemoteRecords()
+
+        if not matching_files:
+            print("No matching files found for the given time range.")
+            return
+
+        # Ensure local directory exists
+        os.makedirs(self.inRecordsDir, exist_ok=True)
+
+        self.clearInRecords()
+
+        # Iterate through the list and copy each file using SCP
+        for file in matching_files:
+            remote_path = f"{file}"
+
+            scp_command = f"scp {un}@{host}:{remote_path} {self.inRecordsDir}"
+            try:
+                subprocess.run(scp_command, shell=True, check=True)
+                print(f"Copied {file} to {self.inRecordsDir}")
+            except subprocess.CalledProcessError as e:
+                print(f"Error copying {file}: {e}")
+
+    def clearInRecords(self):
+        """
+        Deletes all files in self.inRecords.
+        """
+        if not os.path.exists(self.inRecordsDir):
+            print(f"Directory {self.inRecordsDir} does not exist.")
+            return
+
+        # Loop through all files in the directory and delete them
+        for file in os.listdir(self.inRecordsDir):
+            file_path = os.path.join(self.inRecordsDir, file)
+            
+            # Ensure it's a file before attempting to delete
+            if os.path.isfile(file_path):
+                try:
+                    os.remove(file_path)
+                    print(f"Deleted: {file_path}")
+                except Exception as e:
+                    print(f"Error deleting {file_path}: {e}")
+
+    def archiveFilesToDataFrame(self):
+        all_data = []
+        units_dict = None  # Store units from the first file
+
+        # Ensure the directory exists
+        if not os.path.exists(self.inRecordsDir):
+            print(f"Directory {self.inRecordsDir} does not exist.")
+            return None
+
+        # Loop through all JSON files in the directory
+        for file in sorted(os.listdir(self.inRecordsDir)):  # Sorted to maintain chronological order
+            file_path = os.path.join(self.inRecordsDir, file)
+
+            if file.startswith("record.") and file.endswith(".json") and os.path.isfile(file_path):
+                try:
+                    with open(file_path, "r") as f:
+                        data = json.load(f)
+
+                    # Extract sensor data and append to list
+                    all_data.extend(data["sensor_data"])
+
+                    # Capture units from the first file
+                    if units_dict is None:
+                        units_dict = data.get("sensor_units", {})
+
+                except Exception as e:
+                    print(f"Error reading {file_path}: {e}")
+
+        # Convert the list of sensor data to a DataFrame
+        df = pd.DataFrame(all_data) if all_data else None
+
+        self.dataFrame = df
+        self.unitsDict = units_dict
+
+test = ArchiveRecord(20250313143600,20250313150000)
+print(test.dataFrame)
+print(test.unitsDict)
