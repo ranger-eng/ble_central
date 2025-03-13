@@ -14,8 +14,8 @@ from displayz import Displayz
 ble = BLERadio()
 connection = None
 
-LOG_CADENCE = 1 # [s]
-RECORD_LIFESPAN = 10 # [s]
+LOG_CADENCE = 10 # [s]
+RECORD_LIFESPAN = 360 # [s]
 live_record = None
 
 rpi_display = Displayz()
