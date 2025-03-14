@@ -5,10 +5,29 @@ import threading
 import pandas as pd
 import json
 import os
+import calendar
+import matplotlib.pyplot as plt
 
 REMOTE_HOST="192.168.0.100"
 REMOTE_UN="ranger"
 REMOTE_DIR="/mnt/nosferatu/ranger-storage/records/garden"
+DATE_FMT = "%Y%m%d%H%M%S"
+
+def toDateStr(timeStmp):
+    return time.strftime(DATE_FMT, time.localtime(timeStmp))
+
+def toEpochInt(dateStr):
+    return time.mktime(time.strptime(dateStr, DATE_FMT))
+
+def daysToEpochTime(numDays: int):
+    epochTime = numDays*60*60*24
+    return epochTime
+
+def rightNow():
+    return toDateStr(time.time())
+
+def daysAgo(dayz: int):
+    return toDateStr(time.time() - daysToEpochTime(dayz))
 
 class Record:
  
@@ -47,11 +66,6 @@ class Record:
 
         return json.dumps(json_data, indent=4)
 
-    def toDateStr(self, timeStmp):
-        return time.strftime("%m/%d/%Y", time.localtime(timeStmp))
-
-    def toTimeStr(self, timeStmp):
-        return time.strftime("%H:%M:%S", time.localtime(timeStmp))
 
     def uploadOutRecords(self, remoteDir=REMOTE_DIR, un=REMOTE_UN, host=REMOTE_HOST):
         # Ensure the local directory exists
@@ -132,7 +146,7 @@ class LiveRecord(Record):
             return
 
         # Format timestamp as YYYYmmddHHMMSS
-        formatted_time = time.strftime("%Y%m%d%H%M%S", time.localtime(first_timestamp))
+        formatted_time = toDateStr(first_timestamp)
 
         # Create output directory if it doesn't exist
         os.makedirs(self.outRecordsDir, exist_ok=True)
@@ -168,10 +182,9 @@ class LiveRecord(Record):
             return "No data available"
 
         latest_entry = self.latestDataFrame.iloc[-1].to_dict()  # Get the last row as a Series
-        timestampDate = self.toDateStr(latest_entry.get("timestamp", "???"))
-        timestampTime = self.toTimeStr(latest_entry.get("timestamp", "???"))
-        timestamp = timestampDate + " " + timestampTime
-        formatted_text = f"Time Stamp: {timestamp}\n"
+        timestampDate = time.asctime(time.localtime(latest_entry.get("timestamp", "???")))
+        timestamp = timestampDate
+        formatted_text = f"{timestamp}\n"
 
         for sensor, value in latest_entry.items():
             if sensor == "timestamp":
@@ -182,12 +195,15 @@ class LiveRecord(Record):
         return formatted_text.strip()  # Remove trailing newline 
 
 class ArchiveRecord(Record):
-    def __init__(self, start, end):
+    def __init__(self, start, end, timeFmt="%m/%d/%Y %H:%M:%S"):
         super().__init__()
         self.start = start
         self.end = end
         self.fetchArchive()
         self.archiveFilesToDataFrame()
+        
+        if self.dataFrame is not None:
+            self.dataFrame['timestamp'] = pd.to_datetime(self.dataFrame['timestamp'], unit='s').dt.strftime(timeFmt)
 
     def matchRemoteRecords(self, un=REMOTE_UN, host=REMOTE_HOST):
         # SSH command to filter files by timestamp range using grep
@@ -291,7 +307,3 @@ class ArchiveRecord(Record):
 
         self.dataFrame = df
         self.unitsDict = units_dict
-
-test = ArchiveRecord(20250313143600,20250313150000)
-print(test.dataFrame)
-print(test.unitsDict)

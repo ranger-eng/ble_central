@@ -3,3 +3,5 @@ adafruit-python-shell
 adafruit-circuitpython-epd
 adafruit-circuitpython-ble
 pillow
+paramiko
+matplotlib
