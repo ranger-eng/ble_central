@@ -7,6 +7,9 @@ import json
 import os
 import calendar
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+import mpl_ascii
+
 
 REMOTE_HOST="192.168.0.100"
 REMOTE_UN="ranger"
@@ -40,6 +43,45 @@ class Record:
         self.scriptDir = os.path.dirname(os.path.abspath(__file__))
         self.outRecordsDir = os.path.join(self.scriptDir, "outRecords")
         self.inRecordsDir = os.path.join(self.scriptDir, "inRecords")
+
+    def setupPlots(self, width=250, height=50):
+        mpl.use("module://mpl_ascii")
+
+        mpl_ascii.AXES_WIDTH=width
+        mpl_ascii.AXES_HEIGHT=height
+
+
+    def plotTemps(self, width=250, height=50):
+        if self.dataFrame is None:
+            return
+
+        self.setupPlots(width, height)
+
+        self.dataFrame.plot(kind='line', 
+            title="Temp Plots",
+            ylabel="Temp F",
+            xlabel="Day/Month/Year Hour:Min:Sec",
+            x='timestamp', 
+            ylim=(-20,110), 
+            y=['air_temp', 'soil_temp'])
+
+        plt.show()
+
+    def plotPercents(self, width=250, height=50):
+        if self.dataFrame is None:
+            return
+
+        self.setupPlots(width, height)
+
+        self.dataFrame.plot(kind='line', 
+            title="Moisture and Light Percentage",
+            xlabel="Day/Month/Year Hour:Min:Sec",
+            ylabel="Percentage %",
+            x='timestamp', 
+            ylim=(0,100), 
+            y=['moist', 'uva'])
+
+        plt.show()
 
     def addMessageToDataFrame(self, dataMessage: dict, unitsMessage: dict):
 
@@ -307,3 +349,5 @@ class ArchiveRecord(Record):
 
         self.dataFrame = df
         self.unitsDict = units_dict
+
+thisRecord = ArchiveRecord(daysAgo(2), rightNow())
