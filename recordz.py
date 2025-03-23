@@ -63,7 +63,7 @@ class Record:
             xlabel="Day/Month/Year Hour:Min:Sec",
             x='timestamp', 
             ylim=(-20,110), 
-            y=['air_temp', 'soil_temp'])
+            y=['soil2_temp', 'soil1_temp'])
 
         plt.show()
 
@@ -244,8 +244,15 @@ class ArchiveRecord(Record):
         self.fetchArchive()
         self.archiveFilesToDataFrame()
         
+        local_tz = "America/New_York"
+
         if self.dataFrame is not None:
-            self.dataFrame['timestamp'] = pd.to_datetime(self.dataFrame['timestamp'], unit='s').dt.strftime(timeFmt)
+            self.dataFrame['timestamp'] = (
+                pd.to_datetime(self.dataFrame['timestamp'], unit='s')
+                .dt.tz_localize('UTC')
+                .dt.tz_convert(local_tz)
+                .dt.strftime(timeFmt)
+            )
 
     def matchRemoteRecords(self, un=REMOTE_UN, host=REMOTE_HOST):
         # SSH command to filter files by timestamp range using grep
@@ -349,5 +356,3 @@ class ArchiveRecord(Record):
 
         self.dataFrame = df
         self.unitsDict = units_dict
-
-thisRecord = ArchiveRecord(daysAgo(2), rightNow())
